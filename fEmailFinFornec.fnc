@@ -1,0 +1,18 @@
+CREATE OR REPLACE FUNCTION fEmailFinFornec(psCodFornec NUMBER) 
+
+  RETURN VARCHAR2 AS
+  retorno VARCHAR2(300); 
+
+BEGIN
+
+  SELECT MAX(EMAIL)
+    INTO retorno
+    FROM MAF_FORNECCONTATO X WHERE SEQFORNECEDOR = psCodFornec AND X.INDTIPOCONTATO = 'F';
+
+ IF retorno IS NOT NULL THEN
+    retorno := retorno||';';
+ END IF;
+ 
+  RETURN retorno;
+
+END;
