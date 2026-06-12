@@ -2,6 +2,8 @@ CREATE OR REPLACE PROCEDURE NAGP_EMAIL_REGUA_COBRANCA (psEmail              VARC
                                                       psEnviaTICopia        VARCHAR2, 
                                                       psEnviaCARCopia       VARCHAR2, 
                                                       psEnviaFinFornecCopia VARCHAR2, 
+                                                      psEnviaCompCopia      VARCHAR2,
+                                                      psEmailDir            VARCHAR2,
                                                       psNivelRegua          NUMBER) AS
 
     vsQtd            NUMBER(30);
@@ -12,9 +14,12 @@ CREATE OR REPLACE PROCEDURE NAGP_EMAIL_REGUA_COBRANCA (psEmail              VARC
     vsHtml           CLOB := EMPTY_CLOB();
     psEmailTI        VARCHAR2(1000);
     psNroAcordo      NUMBER(30);
+    psFornec         VARCHAR2(2000);
     psDiasVencto     NUMBER(10);
     psEmailCAR       VARCHAR2(2000);
     psEmailFinFornec VARCHAR2(3000);
+    psEmailComprador VARCHAR2(3000);
+    psEmailDiretoria VARCHAR2(2000);
     
 BEGIN
     -- Envia para TI em copia
@@ -27,11 +32,16 @@ BEGIN
       THEN
         psEmailCAR := fEmailCAR();
     END IF;
+    -- ENvia para Diretoria
+    IF psEmailDir = 'S'
+      THEN
+        psEmailDiretoria := fEmailDiretoria();
+    END IF;
     
     -- Quantidade de acordos
-    SELECT COUNT(DISTINCT A.NRO_ACORDO), MAX(INITCAP(COMPRADOR)), MAX(INITCAP(A.NOME_REPRES)), MAX(EMAIL_FIN_FORNEC)
-      INTO vsQtd, psComprador, psRepresentante, psEmailFinFornec
-      FROM NAGV_BASE_REGUA_COBRANCA A
+    SELECT COUNT(DISTINCT A.NRO_ACORDO), MAX(INITCAP(A.COMPRADOR)), MAX(INITCAP(A.NOME_REPRES)), MAX(EMAIL_FIN_FORNEC), MAX(B.EMAIL) EMAIL_COMPRADOR, MAX(FORNECEDOR)
+      INTO vsQtd, psComprador, psRepresentante, psEmailFinFornec, psEmailComprador, psFornec
+      FROM NAGV_BASE_REGUA_COBRANCA A LEFT JOIN NAGT_EMAILCOMPRADORES B ON A.COD_COMPRADOR = B.SEQCOMPRADOR
      WHERE A.NIVEL_REGUA = psNivelRegua
        AND A.EMAIL_REP = psEmail;
 
@@ -43,6 +53,16 @@ BEGIN
     IF psEnviaFinFornecCopia = 'N'
       THEN
         psEmailFinFornec := NULL;
+    END IF;
+    
+    -- Envia para Comprador em copia
+    IF psEnviaCompCopia = 'N'
+      THEN
+       psEmailComprador := NULL;
+        ELSE
+          IF psEmailComprador IS NOT NULL THEN
+             psEmailComprador := psEmailComprador||';';
+          END IF;
     END IF;
 
     -- Pega dados do Fornecedor
@@ -127,7 +147,7 @@ BEGIN
             </h2>
 
             <p style="margin:0 0 12px 0;font-size:14px;color:#374151;line-height:1.6;">
-            Identificamos que há parcelas de acordos em aberto vinculados à sua empresa.
+            Identificamos que há parcelas de acordos em aberto vinculados à sua empresa. ('||psFornec||')
             </p>
 
             <p style="margin:0 0 12px 0;font-size:14px;color:#dc2626;line-height:1.6;">
@@ -237,7 +257,7 @@ BEGIN
     ) VALUES (
         psNroAcordo,
         0,
-        psEmailFinFornec||psEmailCAR||psEmailTI||vsEmail,
+        psEmailComprador||psEmailFinFornec||psEmailCAR||psEmailTI||psEmailDiretoria||vsEmail,
         vsQtd,
         vsHtml,
         SYSDATE
