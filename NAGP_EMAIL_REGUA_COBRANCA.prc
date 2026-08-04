@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE NAGP_EMAIL_REGUA_COBRANCA (psEmail              VARCHAR2, 
+CREATE OR REPLACE PROCEDURE NAGP_EMAIL_REGUA_COBRANCA (psEmail              VARCHAR2,
                                                       psEnviaTICopia        VARCHAR2, 
                                                       psEnviaCARCopia       VARCHAR2, 
                                                       psEnviaFinFornecCopia VARCHAR2, 
@@ -43,7 +43,9 @@ BEGIN
       INTO vsQtd, psComprador, psRepresentante, psEmailFinFornec, psEmailComprador, psFornec
       FROM NAGV_BASE_REGUA_COBRANCA A LEFT JOIN NAGT_EMAILCOMPRADORES B ON A.COD_COMPRADOR = B.SEQCOMPRADOR
      WHERE A.NIVEL_REGUA = psNivelRegua
-       AND A.EMAIL_REP = psEmail;
+       AND A.EMAIL_REP = psEmail
+       AND NOT EXISTS -- evita duplicidade de envio no dia
+       (SELECT 1 FROM NAGT_LOG_ENVIO_ACO_EMAIL XX WHERE XX.NRO_ACORDO = A.NRO_ACORDO AND XX.DATA_ENVIO >= TRUNC(SYSDATE) AND TIPO = 'Regua');
 
     IF vsQtd = 0 THEN
        RETURN; -- não há acordos
@@ -88,6 +90,28 @@ BEGIN
                 PARCELA
     )
     LOOP
+      -- Grava log e controle
+
+    INSERT INTO NAGT_LOG_ENVIO_ACO_EMAIL (
+        NRO_ACORDO,
+        COD_COMPRADOR,
+        EMAIL_DESTINO,
+        QTDE_ACORDOS,
+        HTML_EMAIL,
+        DATA_ENVIO,
+        TIPO,
+        PARCELA
+    ) VALUES (
+        t.Nro_Acordo,
+        0,
+        psEmailComprador||psEmailFinFornec||psEmailCAR||psEmailTI||psEmailDiretoria||vsEmail,
+        vsQtd,
+        vsHtml,
+        SYSDATE,
+        'Regua',
+        t.Nroparcela);
+        
+       
       psNroAcordo := t.Nro_Acordo;
       psDiasVencto := t.DIAS_ATE_VENC;
       
@@ -147,20 +171,20 @@ BEGIN
             </h2>
 
             <p style="margin:0 0 12px 0;font-size:14px;color:#374151;line-height:1.6;">
-            Identificamos que há parcelas de acordos em aberto vinculados à sua empresa. ('||psFornec||')
+            Identificamos que há parcelas vencidas de acordos vinculados à sua empresa. ('||psFornec||')
             </p>
 
             <p style="margin:0 0 12px 0;font-size:14px;color:#dc2626;line-height:1.6;">
             <strong>'||
             CASE WHEN psNivelRegua < 4 THEN 'Solicitamos, por gentileza, a regularização dos pagamentos para não sofrer bloqueio do pedido em '
             || psDiasVencto ||' dias.'
-                 ELSE '...Pendente Falconi definir mensagem no D+15...'
+                 ELSE 'Informamos que o prazo para normalização dos pagamentos expirou. Conforme comunicado anteriormente, seus pedidos foram bloqueados até a regularização.'
                    END||'
             </strong>
             </p>
 
             <p style="margin:0;font-size:14px;color:#374151;line-height:1.6;">
-            Parcelas em aberto:
+            Parcelas em aberto vencidas:
             </p>
 
             </td>
@@ -240,29 +264,11 @@ BEGIN
     -- Envia apenas 1 e-mail consolidado
     CONSINCO.SP_ENVIA_EMAIL(
         CONSINCO.C5_TP_PARAM_SMTP(1),
-        psEmailTI||vsEmail,
+        psEmailComprador||psEmailFinFornec||psEmailCAR||psEmailTI||psEmailDiretoria||vsEmail,
         'Nagumo - Acordos Comerciais - Pendências de Pagamentos',
         vsHtml,
         'N');
         
-     -- Grava log
-
-    INSERT INTO NAGT_LOG_ENVIO_ACO_EMAIL (
-        NRO_ACORDO,
-        COD_COMPRADOR,
-        EMAIL_DESTINO,
-        QTDE_ACORDOS,
-        HTML_EMAIL,
-        DATA_ENVIO
-    ) VALUES (
-        psNroAcordo,
-        0,
-        psEmailComprador||psEmailFinFornec||psEmailCAR||psEmailTI||psEmailDiretoria||vsEmail,
-        vsQtd,
-        vsHtml,
-        SYSDATE
-        
-    );
     COMMIT;
     
     END IF;
